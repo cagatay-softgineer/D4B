@@ -11,7 +11,7 @@ def get_connection():
     conn = psycopg2.connect(
         host=_pg.host,
         port=_pg.port,
-        dbname=_pg.dbname,
+        dbname=_pg.db,
         user=_pg.user,
         password=_pg.password
     )
@@ -27,3 +27,15 @@ def get_connection_by_url():
         yield conn
     finally:
         conn.close()
+
+def check_database():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+                result = cur.fetchone()
+                return result is not None and result[0] == 1
+    except Exception as e:
+        # Optional: log or print error
+        print(f"Database health check failed: {e}")
+        return False

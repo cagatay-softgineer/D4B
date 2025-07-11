@@ -13,7 +13,7 @@ import bcrypt
 from database import user_queries as db
 from util.models import RegisterRequest, LoginRequest  # Import models
 from pydantic import ValidationError
-from util.authlib import default_user
+from util.authlib import role_scopes
 from config.settings import settings
 
 auth_bp = Blueprint("auth", __name__)
@@ -21,6 +21,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 # Enable CORS for all routes in this blueprint
 CORS(auth_bp, resources=settings.CORS_resource_allow_all)
+
 
 # Add /healthcheck to each blueprint
 @auth_bp.before_request
@@ -89,16 +90,22 @@ def login():
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
 
-    user_hashed_password = db.get_user_password_by_email(payload.email)[0]
+    user_status = db.get_user_status_by_email(payload.email)[0]
 
-    #print("RESULT\n\n",result,"\n\n")
+    if user_status in ["deactivate", "banned", "timeout"]:
+        return jsonify({"error": "Current Account Is Not Active or Banned!"}), 403
+
+    user_hashed_password = db.get_user_password_by_email(payload.email)[0]
+    user_role = db.get_user_role_by_email(payload.email)[0]
+
+    # print("RESULT\n\n",result,"\n\n")
 
     if user_hashed_password:
         user_email, stored_hashed_password = payload.email, user_hashed_password
         if bcrypt.checkpw(
             payload.password.encode("utf-8"), stored_hashed_password.encode("utf-8")
         ):
-            additional_claims = {"scopes": default_user}
+            additional_claims = {"scopes": role_scopes[user_role]}
             access_token = create_access_token(
                 identity=payload.email,
                 expires_delta=timedelta(days=7),
@@ -125,8 +132,15 @@ def login():
 @jwt_required(refresh=True)
 def refresh():
     identity = get_jwt_identity()
-    new_access_token = create_access_token(identity=identity)
-    return jsonify({"access_token": new_access_token}), 200
+    user_role = db.get_user_role_by_email(identity)[0]
+    additional_claims = {"scopes": role_scopes[user_role]}
+    access_token = create_access_token(
+        identity=identity,
+        expires_delta=timedelta(days=7),
+        additional_claims=additional_claims,
+    )
+    return jsonify({"access_token": access_token}), 200
+
 
 @auth_bp.route("/test", methods=["POST"])
 def test():
@@ -153,7 +167,8 @@ def test():
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
 
-    additional_claims = {"scopes": default_user}
+    user_role = db.get_user_role_by_email(payload.email)[0]
+    additional_claims = {"scopes": role_scopes[user_role]}
     access_token = create_access_token(
         identity=payload.email,
         expires_delta=timedelta(days=7),

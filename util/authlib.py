@@ -40,6 +40,16 @@ def requires_scope(required_scope):
 
 # All Scopes
 all_scopes = [
-    "me",
+    "maint",
+    "user",
+    "guest",
     "admin"]
-default_user = ["me"]
+
+default_user = ["guest"]
+
+role_scopes = {
+    "admin": ["admin", "user"],
+    "maintenance": ["maint"],
+    "registered_user": ["user"],
+    "guest": ["guest"],
+}

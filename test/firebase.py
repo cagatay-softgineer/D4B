@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 import os
 import firebase_admin
-from config.settings import FirebaseSettings
+from settings import FirebaseSettings
 from firebase_admin import credentials, firestore
 
 _fb = FirebaseSettings()

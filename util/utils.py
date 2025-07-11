@@ -18,7 +18,7 @@ def obfuscate(column_name: str) -> str:
     Returns:
     str: The obfuscated column name, consisting of the first 12 characters of the hashed value in uppercase.
     """
-    salt = settings.salt  # Replace with your own secret salt value.
+    salt = settings.SALT  # Replace with your own secret salt value.
     hash_value = hashlib.sha256(
         (salt + column_name).encode("utf-8")).hexdigest()
     return f"{hash_value[:12].upper()}"

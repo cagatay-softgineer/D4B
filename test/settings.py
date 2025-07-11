@@ -91,8 +91,6 @@ class AppSettings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
 
-    csp_allow_all = {}
-    CORS_resource_allow_all = {r"/*": {"origins": "*"}}
 
 # Single entry point for generic settings
 settings = AppSettings()
