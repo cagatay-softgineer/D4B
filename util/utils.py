@@ -1,6 +1,8 @@
+from datetime import datetime, timezone
 from cmd_gui_kit import CmdGUI
 import hashlib
 from config.settings import settings
+from database.postgres import check_database
 
 OAUTHLIB_INSECURE_TRANSPORT = 1
 
@@ -38,3 +40,12 @@ def get_email_username(email: str) -> str:
         return email.split("@")[0]
     else:
         return None
+
+def health_check():
+    start_time = datetime.now(timezone.utc)
+
+    # Basic status (add more checks as needed)
+    _ = check_database()
+
+    # You can include details per your JS client needs
+    return int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
