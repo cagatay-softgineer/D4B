@@ -38,10 +38,12 @@ def close_last_system_health_period():
             )
             conn.commit()
 
-def on_app_start():
+def on_app_start(_starttime:any):
     close_last_system_health_period()
+    cur_time = datetime.now(timezone.utc)
+    uptime = int((cur_time - _starttime).total_seconds() * 1000)
     save_system_health(
-        uptime=0,
+        uptime=uptime,
         response_time=0,
         data_accuracy=0,
         user_satisfaction=0,

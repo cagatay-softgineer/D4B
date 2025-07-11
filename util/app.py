@@ -11,7 +11,7 @@ from util.service import on_app_start
 from datetime import datetime, timezone
 from database.postgres import get_connection
 
-def create_app(app: Flask, testing=False):
+def create_app(app: Flask, _start_time:any, testing=False):
 
     logger = get_logger("logs", "Main Service")
 
@@ -84,6 +84,6 @@ def create_app(app: Flask, testing=False):
         logger.info("Main Service healthcheck requested")
         return jsonify({"status": "ok", "service": "Main Service"}), 200
 
-    on_app_start()
+    on_app_start(_start_time)
 
     return app

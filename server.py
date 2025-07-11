@@ -1,8 +1,12 @@
 from flask import Flask
 import argparse
 from util.app import create_app
+from datetime import datetime, timezone
 
 if __name__ == "__main__":
+
+    start_time = datetime.now(timezone.utc)
+
     parser = argparse.ArgumentParser(
         description="Run Flask on a specific port.")
     parser.add_argument(
@@ -10,7 +14,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     app = Flask(__name__)
-    app = create_app(app)
+    app = create_app(app, start_time)
     # app.run(
     #     host="0.0.0.0", port=args.port
     # )
