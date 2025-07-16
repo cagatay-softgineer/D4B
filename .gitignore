@@ -193,3 +193,6 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .vscode/PythonImportHelper-v2-Completion.json
+/test/ImageCompression/images
+/test/ImageCompression/output
+/test/ImageCompression/videos
