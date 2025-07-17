@@ -11,27 +11,27 @@ from database.postgres import get_connection
 from pydantic import BaseModel, ValidationError
 from werkzeug.exceptions import Forbidden
 
-users_bp = Blueprint("users", __name__)
+user_bp = Blueprint("users", __name__)
 limiter = Limiter(key_func=get_remote_address)
 
 # Enable CORS for all routes in this blueprint
-CORS(users_bp, resources=settings.CORS_resource_allow_all)
+CORS(user_bp, resources=settings.CORS_resource_allow_all)
 
 
 # Add /healthcheck to each blueprint
-@users_bp.before_request
+@user_bp.before_request
 def log_user_requests():
     print("User blueprint request received.")
 
 
 # Add /healthcheck to each blueprint
-@users_bp.route("/healthcheck", methods=["GET"])
+@user_bp.route("/healthcheck", methods=["GET"])
 def user_healthcheck():
     print("User Service healthcheck requested")
     return jsonify({"status": "ok", "service": "User Service"}), 200
 
 
-@users_bp.route("/get_all_users", methods=["GET"])
+@user_bp.route("/get_all_users", methods=["GET"])
 @requires_scope("admin")
 def get_all():
     # Get pagination params from query string
@@ -50,7 +50,7 @@ def get_all():
         "total_pages": (total // page_size) + (1 if total % page_size else 0),
     })
 
-@users_bp.route("/get_one_user", methods=["GET"])
+@user_bp.route("/get_one_user", methods=["GET"])
 @requires_scope("admin")
 def get_one():
     # Get pagination params from query string
@@ -75,7 +75,7 @@ def user_is_admin(jwt_claims):
 def user_can_edit(target_user_id, current_user_id, jwt_claims):
     return user_is_admin(jwt_claims) or (target_user_id == current_user_id)
 
-@users_bp.route("/<int:user_id>", methods=["PATCH"])
+@user_bp.route("/<int:user_id>", methods=["PATCH"])
 @jwt_required()
 def update_user(user_id):
     current_user = get_jwt_identity()
@@ -109,7 +109,7 @@ def update_user(user_id):
     log_activity("User profile updated", "user", user_id=current_user, details=fields)
     return jsonify({"user": dict(zip(["id", "email", "name", "avatar_url", "status", "role"], user))})
 
-@users_bp.route("/<int:user_id>", methods=["DELETE"])
+@user_bp.route("/<int:user_id>", methods=["DELETE"])
 @jwt_required()
 @requires_scope("admin")
 def delete_user(user_id):

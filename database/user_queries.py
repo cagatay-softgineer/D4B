@@ -16,7 +16,6 @@ def get_user_password_by_email(email: str):
         with conn.cursor() as cur:
             cur.execute("SELECT password_hash FROM users WHERE email = %s", (email,))
             data = cur.fetchone()
-            print(data)
             return data
 
 def get_user_id_by_email(email: str):

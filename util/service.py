@@ -41,8 +41,11 @@ def close_last_system_health_period():
 
 def on_app_start(_starttime:any):
     close_last_system_health_period()
-    cur_time = datetime.now(timezone.utc)
-    uptime = int((cur_time - _starttime).total_seconds() * 1000)
+    delta = datetime.now(timezone.utc) - _starttime
+    microseconds = delta.total_seconds() * 1_000_000  # microseconds as float
+    #print(f"Elapsed time: {microseconds:.2f} μs")
+    milliseconds = microseconds / 1000
+    uptime = milliseconds
     response_time = health_check()
     save_system_health(
         uptime=uptime,

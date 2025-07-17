@@ -1,11 +1,16 @@
 from flask import Flask
 import argparse
+from database.into_redis import clone_postgres_to_redis
+from util.loading_sequence import main_starship_check
 from util.app import create_app
 from datetime import datetime, timezone
 
 if __name__ == "__main__":
 
     start_time = datetime.now(timezone.utc)
+
+    main_starship_check()
+    clone_postgres_to_redis()
 
     parser = argparse.ArgumentParser(
         description="Run Flask on a specific port.")
@@ -20,5 +25,5 @@ if __name__ == "__main__":
     # )
     # Create OpenSSH certificates for HTTPS
     app.run(
-        host="0.0.0.0", port=args.port, debug=True, #ssl_context="adhoc"
+        host="0.0.0.0", port=args.port, ssl_context="adhoc"
     )

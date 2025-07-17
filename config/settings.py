@@ -22,6 +22,19 @@ class PostgresSettings(BaseSettings):
         env_file_encoding = "utf-8"
 
 
+class RedisSettings(BaseSettings):
+    host: str = Field("localhost", env="REDIS_HOST")
+    port: int = Field(6379, env="REDIS_PORT")
+    db:   int = Field(0, env="REDIS_DB")
+
+    @property
+    def url(self) -> str:
+        return f"redis://{self.host}:{self.port}/{self.db}"
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
 class SQLiteSettings(BaseSettings):
     path: str = Field("sqlite.db", env="SQLITE_PATH")
 

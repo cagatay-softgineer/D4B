@@ -4,8 +4,14 @@ from Blueprints.auth import auth_bp
 from database.postgres import check_database
 from datetime import datetime
 import time
-from Blueprints.users import users_bp
+from Blueprints.users import user_bp
 from Blueprints.profile import profile_bp
+from Blueprints.jobs import jobs_bp
+from Blueprints.attachments import attachments_bp
+from Blueprints.locations import locations_bp
+from Blueprints.notifications import notifications_bp
+from Blueprints.teams import teams_bp
+from Blueprints.team_members import team_members_bp
 
 
 def register_blueprints(app: Flask, testing=False):
@@ -17,8 +23,14 @@ def register_blueprints(app: Flask, testing=False):
     )
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(users_bp, url_prefix="/admin")
+    app.register_blueprint(user_bp, url_prefix="/admin")
     app.register_blueprint(profile_bp, url_prefix="/profile")
+    app.register_blueprint(jobs_bp, url_prefix="/jobs")
+    app.register_blueprint(attachments_bp, url_prefix="/file")
+    app.register_blueprint(locations_bp, url_prefix="/geo")
+    app.register_blueprint(notifications_bp, url_prefix="/notify")
+    app.register_blueprint(teams_bp, url_prefix="/teams")
+    app.register_blueprint(team_members_bp, url_prefix="/team_members")
     app.register_blueprint(swaggerui_blueprint, url_prefix=app.config["SWAGGER_URL"])
 
     @app.route("/health", methods=["GET"])

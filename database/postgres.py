@@ -29,13 +29,17 @@ def get_connection_by_url():
         conn.close()
 
 def check_database():
+    isUp = False
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1;")
-                result = cur.fetchone()
+                result =    cur.fetchone()
+                isUp = True
                 return result is not None and result[0] == 1
     except Exception as e:
         # Optional: log or print error
         print(f"Database health check failed: {e}")
         return False
+    finally:
+        return isUp

@@ -53,9 +53,24 @@ def video_to_mp4(src_path, dest_path, duration=None):
     cmd += [dest_path]
     subprocess.run(cmd, check=True)
 
+def video_to_mp4_cuda(src_path, dest_path, duration=None):
+    cmd = [
+        "ffmpeg",
+        "-hwaccel", "cuda",
+        "-i", src_path,
+        "-c:v", "h264_nvenc",
+        "-preset", "fast",
+        "-b:v", "2M",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart"
+    ]
+    if duration:
+        cmd += ["-t", str(duration)]
+    cmd += [dest_path]
     subprocess.run(cmd, check=True)
-
 
 #video_to_webp("videos/1.mp4", "output/video_1.webp", 175)
 #video_to_mp4("videos/1.mp4", "output/video_1.mp4", 175)
+#video_to_mp4_cuda("videos/1.mp4", "output/video_1.mp4", 175)
 video_to_webm("videos/1.mp4", "output/video_1.mp4", 175)

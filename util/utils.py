@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from cmd_gui_kit import CmdGUI
 import hashlib
 from config.settings import settings
-from database.postgres import check_database
+from database.postgres import check_database as Postgres
+from database.redisdb import check_database as Redis
 
 OAUTHLIB_INSECURE_TRANSPORT = 1
 
@@ -45,7 +46,13 @@ def health_check():
     start_time = datetime.now(timezone.utc)
 
     # Basic status (add more checks as needed)
-    _ = check_database()
+    _ = Postgres()
+    _ = Redis()
 
     # You can include details per your JS client needs
-    return int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+    delta = datetime.now(timezone.utc) - start_time
+    microseconds = delta.total_seconds() * 1_000_000  # microseconds as float
+    #print(f"Elapsed time: {microseconds:.2f} μs")
+    milliseconds = microseconds / 1000
+    #return int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+    return milliseconds
