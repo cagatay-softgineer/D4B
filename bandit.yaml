@@ -3,6 +3,7 @@ exclude_dirs:
   - tests
   - migrations
   - legacy
+  - admin-dashboard
 skips:
   # Skip specific Bandit tests, for example:
   - B101  # assert_used

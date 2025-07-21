@@ -196,3 +196,4 @@ cython_debug/
 /test/ImageCompression/images
 /test/ImageCompression/output
 /test/ImageCompression/videos
+/admin-dashboard

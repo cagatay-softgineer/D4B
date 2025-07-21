@@ -20,8 +20,7 @@ auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address)
 
 # Enable CORS for all routes in this blueprint
-CORS(auth_bp, resources=settings.CORS_resource_allow_all)
-
+CORS(auth_bp, resources=settings.CORS_resource_allow_all, supports_credentials=True)
 
 # Add /healthcheck to each blueprint
 @auth_bp.before_request
@@ -127,6 +126,68 @@ def login():
 
     return jsonify({"error": "Invalid email or password"}), 401
 
+@auth_bp.route("/admin", methods=["POST", "OPTIONS"])
+def admin_login():
+    """
+    Authenticates a user by verifying the email and password.
+
+    This function receives a POST request containing a JSON payload with the user's email and password.
+    It validates the payload using the LoginRequest model. If the payload is valid, it retrieves the user's
+    hashed password from the database using the provided email. If the password matches the stored hashed
+    password, it generates an access token using the Flask-JWT-Extended library and returns it along with
+    the user's ID in a JSON response. If the email or password is invalid, it returns an error message in
+    a JSON response.
+
+    Parameters:
+    - request: A Flask request object containing the JSON payload with the user's email and password.
+
+    Returns:
+    - A Flask response object containing a JSON response with the access token and user's ID if the
+      authentication is successful. If the authentication fails, it returns a JSON response with an error
+      message.
+    """
+    try:
+        payload = LoginRequest.parse_obj(request.get_json())
+    except ValidationError as ve:
+        return jsonify({"error": ve.errors()}), 400
+
+    user_status = db.get_user_status_by_email(payload.email)[0]
+
+    if user_status in ["deactivate", "banned", "timeout"]:
+        return jsonify({"error": "Current Account Is Not Active or Banned!"}), 403
+
+    user_hashed_password = db.get_user_password_by_email(payload.email)[0]
+    user_role = db.get_user_role_by_email(payload.email)[0]
+    if user_role != "admin":
+        return jsonify({"error": "Current Account Is Not an Admin!"}), 401
+    # print("RESULT\n\n",result,"\n\n")
+
+    if user_hashed_password:
+        user_email, stored_hashed_password = payload.email, user_hashed_password
+        if bcrypt.checkpw(
+            payload.password.encode("utf-8"), stored_hashed_password.encode("utf-8")
+        ):
+            additional_claims = {"scopes": role_scopes[user_role]}
+            access_token = create_access_token(
+                identity=payload.email,
+                expires_delta=timedelta(days=7),
+                additional_claims=additional_claims,
+            )
+            refresh_token = create_refresh_token(
+                identity=payload.email, expires_delta=timedelta(days=30)
+            )
+            return (
+                jsonify(
+                    {
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
+                        "user_email": user_email,
+                    }
+                ),
+                200,
+            )
+
+    return jsonify({"error": "Invalid email or password"}), 401
 
 @auth_bp.route("/refresh", methods=["POST"])
 @jwt_required(refresh=True)

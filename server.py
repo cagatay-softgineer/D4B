@@ -25,5 +25,5 @@ if __name__ == "__main__":
     # )
     # Create OpenSSH certificates for HTTPS
     app.run(
-        host="0.0.0.0", port=args.port, ssl_context="adhoc"
+        host="0.0.0.0", port=args.port, #ssl_context="adhoc"
     )

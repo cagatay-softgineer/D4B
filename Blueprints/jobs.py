@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from pydantic import BaseModel, Field, ValidationError
+from psycopg2 import sql
+from psycopg2.extras import RealDictCursor
 from database.postgres import get_connection
 from util.activity_logger import log_activity
-from pydantic import BaseModel, Field, ValidationError
-from psycopg2.extras import RealDictCursor
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -41,10 +42,16 @@ def create_job():
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """INSERT INTO jobs (title, description, priority, location, latitude, longitude,
-                                     reporter_id, team_id, assignee_id, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'open')
-                   RETURNING id, title, status, created_at""",
+                """
+                INSERT INTO jobs (
+                  title, description, priority,
+                  location, latitude, longitude,
+                  reporter_id, team_id, assignee_id, status
+                ) VALUES (
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open'
+                )
+                RETURNING id, title, status, created_at
+                """,
                 (
                     payload.title,
                     payload.description,
@@ -59,12 +66,11 @@ def create_job():
             )
             job = cur.fetchone()
             conn.commit()
-            # Optionally: generate job_code here
 
     log_activity("Job created", "job", user_id=reporter_id, details=job)
     return jsonify(job), 201
 
-# --- Update/Assign/Close Job ---
+# --- Update a Job ---
 @jobs_bp.route("/<int:job_id>", methods=["PATCH"])
 @jwt_required()
 def update_job(job_id):
@@ -73,80 +79,104 @@ def update_job(job_id):
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
 
-    updatable_fields = {k: v for k, v in payload.dict().items() if v is not None}
-    if not updatable_fields:
+    updatable = {k: v for k, v in payload.dict().items() if v is not None}
+    if not updatable:
         return jsonify({"error": "No updatable fields provided"}), 400
 
-    set_expr = ", ".join(f"{k}=%s" for k in updatable_fields)
-    values = list(updatable_fields.values()) + [job_id]
+    # Build safe SET clause
+    cols = [sql.Identifier(k) for k in updatable.keys()]
+    set_clause = sql.SQL(", ").join(
+        sql.SQL("{} = %s").format(col) for col in cols
+    )
+    params = list(updatable.values()) + [job_id]
+
+    query = sql.SQL(
+        """
+        UPDATE jobs
+        SET {set_clause}, updated_at = NOW()
+        WHERE id = %s
+        RETURNING id, title, status, updated_at
+        """
+    ).format(set_clause=set_clause)
+
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                f"""UPDATE jobs SET {set_expr}, updated_at=NOW()
-                    WHERE id=%s
-                    RETURNING id, title, status, updated_at
-                """, values
-            )
+            cur.execute(query, params)
             job = cur.fetchone()
             if not job:
                 return jsonify({"error": "Job not found"}), 404
-            # Log status change in job_status_history if status is updated
-            if 'status' in updatable_fields:
+
+            if "status" in updatable:
                 cur.execute(
-                    """INSERT INTO job_status_history (job_id, old_status, new_status, changed_by)
-                       VALUES (%s, %s, %s, %s)
-                    """, (job_id, request.json.get('old_status'), updatable_fields['status'], get_jwt_identity()))
+                    """
+                    INSERT INTO job_status_history (
+                      job_id, old_status, new_status, changed_by
+                    ) VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        job_id,
+                        request.json.get("old_status"),
+                        updatable["status"],
+                        get_jwt_identity(),
+                    )
+                )
             conn.commit()
 
     log_activity("Job updated", "job", user_id=get_jwt_identity(), details=job)
     return jsonify(job)
 
-# --- Retrieve (List, Filter, Search) Jobs ---
+# --- List/Filter/Search Jobs ---
 @jobs_bp.route("/", methods=["GET"])
 @jwt_required()
 def list_jobs():
-    status = request.args.get("status")
-    priority = request.args.get("priority")
-    team_id = request.args.get("team_id")
-    assignee_id = request.args.get("assignee_id")
-    reporter_id = request.args.get("reporter_id")
-    search = request.args.get("search")
-    page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("page_size", 20))
-    offset = (page - 1) * page_size
-
-    where = []
+    # Filters
+    filters = [
+        ("status", request.args.get("status")),
+        ("priority", request.args.get("priority")),
+        ("team_id", request.args.get("team_id")),
+        ("assignee_id", request.args.get("assignee_id")),
+        ("reporter_id", request.args.get("reporter_id")),
+    ]
+    conditions = []
     params = []
-    if status:
-        where.append("status = %s")
-        params.append(status)
-    if priority:
-        where.append("priority = %s")
-        params.append(priority)
-    if team_id:
-        where.append("team_id = %s")
-        params.append(team_id)
-    if assignee_id:
-        where.append("assignee_id = %s")
-        params.append(assignee_id)
-    if reporter_id:
-        where.append("reporter_id = %s")
-        params.append(reporter_id)
+
+    for col, val in filters:
+        if val is not None:
+            conditions.append(
+                sql.SQL("{} = %s").format(sql.Identifier(col))
+            )
+            params.append(val)
+
+    search = request.args.get("search")
     if search:
-        where.append("(title ILIKE %s OR description ILIKE %s)")
+        conditions.append(
+            sql.SQL("(title ILIKE %s OR description ILIKE %s)")
+        )
         params.extend([f"%{search}%", f"%{search}%"])
 
-    where_clause = "WHERE " + " AND ".join(where) if where else ""
+    where_clause = (
+        sql.SQL("WHERE ") + sql.SQL(" AND ").join(conditions)
+        if conditions else sql.SQL("")
+    )
+
+    page      = int(request.args.get("page", 1))
+    page_size = int(request.args.get("page_size", 20))
+    offset    = (page - 1) * page_size
+    params.extend([page_size, offset])
+
+    query = sql.SQL(
+        """
+        SELECT *
+          FROM jobs
+        {where}
+        ORDER BY created_at DESC
+        LIMIT %s OFFSET %s
+        """
+    ).format(where=where_clause)
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                f"""SELECT * FROM jobs
-                    {where_clause}
-                    ORDER BY created_at DESC
-                    LIMIT %s OFFSET %s
-                """, (*params, page_size, offset)
-            )
+            cur.execute(query, params)
             jobs = cur.fetchall()
 
     return jsonify(jobs)
@@ -157,37 +187,48 @@ def list_jobs():
 def get_job(job_id):
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM jobs WHERE id=%s", (job_id,))
+            cur.execute(
+                "SELECT * FROM jobs WHERE id = %s", (job_id,)
+            )
             job = cur.fetchone()
             if not job:
                 return jsonify({"error": "Job not found"}), 404
-            # Optionally include job status history, files, etc.
-            cur.execute("SELECT * FROM job_status_history WHERE job_id=%s ORDER BY changed_at", (job_id,))
-            history = cur.fetchall()
-            job['status_history'] = history
+
+            cur.execute(
+                "SELECT * FROM job_status_history WHERE job_id = %s ORDER BY changed_at", (job_id,)
+            )
+            job["status_history"] = cur.fetchall()
 
     return jsonify(job)
 
-# --- Close Job (set status to completed/closed) ---
+# --- Close Job ---
 @jobs_bp.route("/<int:job_id>/close", methods=["PATCH"])
 @jwt_required()
 def close_job(job_id):
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """UPDATE jobs SET status='completed', completed_at=NOW()
-                   WHERE id=%s AND status != 'completed'
-                   RETURNING id, status, completed_at
-                """, (job_id,)
+                """
+                UPDATE jobs
+                SET status = 'completed', completed_at = NOW()
+                WHERE id = %s AND status != 'completed'
+                RETURNING id, status, completed_at
+                """,
+                (job_id,)
             )
             job = cur.fetchone()
             if not job:
                 return jsonify({"error": "Job not found or already completed"}), 404
+
             cur.execute(
-                """INSERT INTO job_status_history (job_id, old_status, new_status, changed_by)
-                   VALUES (%s, %s, %s, %s)
-                """, (job_id, "in_progress", "completed", get_jwt_identity()))
+                """
+                INSERT INTO job_status_history (
+                  job_id, old_status, new_status, changed_by
+                ) VALUES (%s, %s, %s, %s)
+                """,
+                (job_id, "in_progress", "completed", get_jwt_identity())
+            )
             conn.commit()
+
     log_activity("Job closed", "job", user_id=get_jwt_identity(), details=job)
     return jsonify(job)
-

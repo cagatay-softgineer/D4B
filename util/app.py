@@ -32,7 +32,10 @@ def create_app(app: Flask, _start_time:any, testing=False):
     app.config["PREFERRED_URL_SCHEME"] = "https"
     app.config["TESTING"] = testing
 
-    CORS(app, resources=settings.CORS_resource_allow_all)
+    # Turn off Flask’s strict‐slash behavior
+    app.url_map.strict_slashes = False
+
+    CORS(app, resources=settings.CORS_resource_allow_all, supports_credentials=True)
 
     # Middleware to log all requests
 

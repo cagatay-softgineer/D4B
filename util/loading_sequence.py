@@ -7,6 +7,9 @@ from database.postgres import check_database as checkDB
 
 init(autoreset=True)
 
+def clear_output():
+    os.system("cls" if os.name == "nt" else "clear")
+
 COLORSET = [
     "\033[91m",  # Red
     "\033[92m",  # Green
@@ -188,6 +191,9 @@ def main_starship_check():
     print_pattern()
     print_banner()
     print_pattern()
+    time.sleep(3)
+    clear_output()
+    sys.stdout.flush()
     sys.stdout.write("\nInitializing D4B System Resources...\n\n")
     sys.stdout.flush()
     system_status = []
