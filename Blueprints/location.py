@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 from database.location_ops import insert_location
 from util.models import LocationPayload
+from helper.error import logger
 
 location_bp = Blueprint("location", __name__)
 
@@ -43,7 +44,8 @@ def save_location():
         )
         print(f"Job {payload.job_id}, User {user_id}: ({payload.latitude}, {payload.longitude}) at {timestamp}")
     except Exception as e:
-        return jsonify({"error": "Failed to save location", "details": str(e)}), 500
+        logger.error(e)
+        return jsonify({"error": "Failed to save location"}), 500
 
     return jsonify({
         "message": "Location saved",
