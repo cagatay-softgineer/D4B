@@ -1,0 +1,11 @@
+# bandit.yaml
+exclude_dirs:
+  - tests
+  - migrations
+  - legacy
+skips:
+  # Skip specific Bandit tests, for example:
+  - B101  # assert_used
+  - B104  # hardcoded_bind_all_interfaces
+  - B311  # random usage
+  - B113  # request_without_timeout
