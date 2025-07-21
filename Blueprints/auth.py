@@ -126,7 +126,7 @@ def login():
 
     return jsonify({"error": "Invalid email or password"}), 401
 
-@auth_bp.route("/admin", methods=["POST", "OPTIONS"])
+@auth_bp.route("/admin", methods=["POST"])
 def admin_login():
     """
     Authenticates a user by verifying the email and password.
