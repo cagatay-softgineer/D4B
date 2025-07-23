@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from database.user_queries import get_user_id_by_email
 from util.authlib import requires_scope
 from database.postgres import get_connection
 from pydantic import BaseModel, ValidationError
@@ -32,7 +33,7 @@ def create_team():
                 (payload.name, payload.description),
             )
             team = cur.fetchone()
-    log_activity("Team created", "team", user_id=get_jwt_identity(), details=payload.dict())
+    log_activity("Team created", "team", user_id=get_user_id_by_email(get_jwt_identity()), details=payload.dict())
     return jsonify({"team": dict(zip(["id", "name", "description"], team))}), 201
 
 @teams_bp.route("/", methods=["GET"])
@@ -75,7 +76,7 @@ def update_team(team_id):
             if not team:
                 return jsonify({"error": "Team not found"}), 404
 
-    log_activity("Team updated", "team", user_id=get_jwt_identity(), details=fields)
+    log_activity("Team updated", "team", user_id=get_user_id_by_email(get_jwt_identity()), details=fields)
     return jsonify({"team": dict(zip(["id", "name", "description", "efficiency"], team))})
 
 @teams_bp.route("/<int:team_id>", methods=["DELETE"])
@@ -93,5 +94,5 @@ def delete_team(team_id):
             deleted = cur.fetchone()
             if not deleted:
                 return jsonify({"error": "Team not found"}), 404
-    log_activity("Team deleted", "team", user_id=get_jwt_identity(), details={"team_id": team_id})
+    log_activity("Team deleted", "team", user_id=get_user_id_by_email(get_jwt_identity()), details={"team_id": team_id})
     return jsonify({"message": "Team deleted", "team_id": team_id})

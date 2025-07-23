@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from psycopg2.extras import RealDictCursor
 from database.postgres import get_connection
+from database.user_queries import get_user_id_by_email
 from util.activity_logger import log_activity
 
 notifications_bp = Blueprint("notifications", __name__)
@@ -12,7 +13,7 @@ notifications_bp = Blueprint("notifications", __name__)
 @notifications_bp.route("/", methods=["GET"])
 @jwt_required()
 def get_user_notifications():
-    user_id = get_jwt_identity()
+    user_id = get_user_id_by_email(get_jwt_identity())
     page = int(request.args.get("page", 1))
     page_size = int(request.args.get("page_size", 20))
     offset = (page - 1) * page_size
@@ -32,7 +33,7 @@ def get_user_notifications():
 @notifications_bp.route("/<int:notification_id>/read", methods=["PATCH"])
 @jwt_required()
 def mark_notification_read(notification_id):
-    user_id = get_jwt_identity()
+    user_id = get_user_id_by_email(get_jwt_identity())
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -65,7 +66,7 @@ def send_notification(user_id, job_id, message, status="unread"):
 @notifications_bp.route("/<int:notification_id>", methods=["DELETE"])
 @jwt_required()
 def delete_notification(notification_id):
-    user_id = get_jwt_identity()
+    user_id = get_user_id_by_email(get_jwt_identity())
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""

@@ -3,7 +3,7 @@ from flask_limiter import Limiter
 from flask_cors import CORS
 from flask_limiter.util import get_remote_address
 from config.settings import settings
-from database.user_queries import get_all_users, get_one_user_by_email
+from database.user_queries import get_all_users, get_one_user_by_email, get_user_id_by_email
 from util.activity_logger import log_activity
 from util.authlib import requires_scope
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -106,7 +106,7 @@ def update_user(user_id):
             if not user:
                 return jsonify({"error": "User not found"}), 404
 
-    log_activity("User profile updated", "user", user_id=current_user, details=fields)
+    log_activity("User profile updated", "user", user_id=get_user_id_by_email(get_jwt_identity()), details=fields)
     return jsonify({"user": dict(zip(["id", "email", "name", "avatar_url", "status", "role"], user))})
 
 @user_bp.route("/<int:user_id>", methods=["DELETE"])
@@ -119,5 +119,5 @@ def delete_user(user_id):
             deleted = cur.fetchone()
             if not deleted:
                 return jsonify({"error": "User not found"}), 404
-    log_activity("User soft-deleted", "user", user_id=get_jwt_identity(), details={"target_user_id": user_id})
+    log_activity("User soft-deleted", "user", user_id=get_user_id_by_email(get_jwt_identity()), details={"target_user_id": user_id})
     return jsonify({"message": "User deleted (soft delete)", "user_id": user_id})

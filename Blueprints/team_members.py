@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from database.user_queries import get_user_id_by_email
 from util.authlib import requires_scope
 from database.postgres import get_connection
 from util.activity_logger import log_activity
@@ -36,7 +37,7 @@ def remove_member(team_id, user_id):
             deleted = cur.fetchone()
             if not deleted:
                 return jsonify({"error": "Assignment not found"}), 404
-    log_activity("User removed from team", "team_members", user_id=get_jwt_identity(), details={"team_id": team_id, "user_id": user_id})
+    log_activity("User removed from team", "team_members", user_id=get_user_id_by_email(get_jwt_identity()), details={"team_id": team_id, "user_id": user_id})
     return jsonify({"message": "User removed from team", "team_id": team_id, "user_id": user_id})
 
 @team_members_bp.route("/<int:team_id>/members", methods=["GET"])

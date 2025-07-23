@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, ValidationError
 from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 from database.postgres import get_connection
+from database.user_queries import get_user_id_by_email
 from util.activity_logger import log_activity
 
 jobs_bp = Blueprint("jobs", __name__)
@@ -38,7 +39,7 @@ def create_job():
     except ValidationError as e:
         return jsonify({"error": e.errors()}), 400
 
-    reporter_id = get_jwt_identity()
+    reporter_id = get_user_id_by_email(get_jwt_identity())
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
