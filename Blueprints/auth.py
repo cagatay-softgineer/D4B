@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
     create_access_token,
@@ -11,240 +11,230 @@ from flask_cors import CORS
 from flask_limiter.util import get_remote_address
 import bcrypt
 from database import user_queries as db
-from util.models import RegisterRequest, LoginRequest  # Import models
+from util.activity_logger import log_activity
+from util.models import RegisterRequest, LoginRequest
 from pydantic import ValidationError
 from util.authlib import role_scopes
 from config.settings import settings
+from database.user_queries import get_user_id_by_email
 
 auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address)
-
-# Enable CORS for all routes in this blueprint
 CORS(auth_bp, resources=settings.CORS_resource_allow_all, supports_credentials=True)
 
-# Add /healthcheck to each blueprint
+
 @auth_bp.before_request
 def log_auth_requests():
     print("Auth blueprint request received.")
 
 
-# Add /healthcheck to each blueprint
 @auth_bp.route("/healthcheck", methods=["GET"])
 def auth_healthcheck():
-    print("Auth Service healthcheck requested")
     return jsonify({"status": "ok", "service": "Auth Service"}), 200
 
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
-    """
-    Registers a new user by validating the request payload, hashing the password, and storing it in the database.
-
-    This function receives a POST request containing a JSON payload with the user's email and password.
-    It validates the payload using the RegisterRequest model. If the payload is valid, it hashes the password
-    using the bcrypt library and stores the user's email and hashed password in the database using the
-    firebase_operations module. It then returns a JSON response indicating successful registration.
-
-    Parameters:
-    - request: A Flask request object containing the JSON payload with the user's email and password.
-
-    Returns:
-    - A Flask response object containing a JSON response with a "message" field indicating successful registration.
-      If the payload is invalid, it returns a JSON response with an "error" field containing the validation errors.
-      The HTTP status code is set to 400 in case of validation errors.
-    """
     try:
         payload = RegisterRequest.parse_obj(request.get_json())
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
 
-    # hashed_password = bcrypt.hashpw(payload.password.encode('utf-8'), bcrypt.gensalt())
+    success = False
+    error_text = None
+    error_type = None
+    user_id = None
 
-    db.insert_user(payload.email, payload.password)
-    return jsonify({"message": "User registered successfully"}), 201
+    try:
+        user_id = db.insert_user(payload.email, payload.password)
+        success = True
+        return jsonify({"message": "User registered successfully", "user_id": user_id}), 201
+    except Exception as e:
+        error_text = str(e)
+        error_type = "registration_exception"
+        return jsonify({"error": "Registration failed"}), 500
+    finally:
+        log_activity(
+            "User registration",
+            "auth",
+            user_id=user_id,
+            details={"success": success, "error_type": error_type, "error": error_text},
+        )
 
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    """
-    Authenticates a user by verifying the email and password.
-
-    This function receives a POST request containing a JSON payload with the user's email and password.
-    It validates the payload using the LoginRequest model. If the payload is valid, it retrieves the user's
-    hashed password from the database using the provided email. If the password matches the stored hashed
-    password, it generates an access token using the Flask-JWT-Extended library and returns it along with
-    the user's ID in a JSON response. If the email or password is invalid, it returns an error message in
-    a JSON response.
-
-    Parameters:
-    - request: A Flask request object containing the JSON payload with the user's email and password.
-
-    Returns:
-    - A Flask response object containing a JSON response with the access token and user's ID if the
-      authentication is successful. If the authentication fails, it returns a JSON response with an error
-      message.
-    """
     try:
         payload = LoginRequest.parse_obj(request.get_json())
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
 
-    user_status = db.get_user_status_by_email(payload.email)[0]
+    success = False
+    error_text = None
+    error_type = None
+    user_id = None
 
-    if user_status in ["deactivate", "banned", "timeout"]:
-        return jsonify({"error": "Current Account Is Not Active or Banned!"}), 403
+    try:
+        status = db.get_user_status_by_email(payload.email)[0]
+        user_id = get_user_id_by_email(payload.email)
 
-    user_hashed_password = db.get_user_password_by_email(payload.email)[0]
-    user_role = db.get_user_role_by_email(payload.email)[0]
+        if status in ("deactivate", "banned", "timeout"):
+            error_type = "inactive_or_banned"
+            return jsonify({"error": "Account is inactive or banned"}), 403
 
-    # print("RESULT\n\n",result,"\n\n")
+        hashed = db.get_user_password_by_email(payload.email)[0]
+        if not bcrypt.checkpw(payload.password.encode(), hashed.encode()):
+            error_type = "wrong_password"
+            return jsonify({"error": "Invalid credentials"}), 401
 
-    if user_hashed_password:
-        user_email, stored_hashed_password = payload.email, user_hashed_password
-        if bcrypt.checkpw(
-            payload.password.encode("utf-8"), stored_hashed_password.encode("utf-8")
-        ):
-            additional_claims = {"scopes": role_scopes[user_role]}
-            access_token = create_access_token(
-                identity=payload.email,
-                expires_delta=timedelta(days=7),
-                additional_claims=additional_claims,
-            )
-            refresh_token = create_refresh_token(
-                identity=payload.email, expires_delta=timedelta(days=30)
-            )
-            return (
-                jsonify(
-                    {
-                        "access_token": access_token,
-                        "refresh_token": refresh_token,
-                        "user_email": user_email,
-                    }
-                ),
-                200,
-            )
+        role = db.get_user_role_by_email(payload.email)[0]
+        claims = {"scopes": role_scopes[role]}
+        access = create_access_token(identity=payload.email, expires_delta=timedelta(days=7), additional_claims=claims)
+        refresh = create_refresh_token(identity=payload.email, expires_delta=timedelta(days=30))
 
-    return jsonify({"error": "Invalid email or password"}), 401
+        success = True
+        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id}), 200
+
+    except Exception as e:
+        error_text = str(e)
+        error_type = "authentication_exception"
+        return jsonify({"error": "Authentication failed"}), 500
+    finally:
+        log_activity(
+            "User login",
+            "auth",
+            user_id=user_id,
+            details={"success": success, "error_type": error_type, "error": error_text},
+        )
+
 
 @auth_bp.route("/admin", methods=["POST"])
 def admin_login():
-    """
-    Authenticates a user by verifying the email and password.
-
-    This function receives a POST request containing a JSON payload with the user's email and password.
-    It validates the payload using the LoginRequest model. If the payload is valid, it retrieves the user's
-    hashed password from the database using the provided email. If the password matches the stored hashed
-    password, it generates an access token using the Flask-JWT-Extended library and returns it along with
-    the user's ID in a JSON response. If the email or password is invalid, it returns an error message in
-    a JSON response.
-
-    Parameters:
-    - request: A Flask request object containing the JSON payload with the user's email and password.
-
-    Returns:
-    - A Flask response object containing a JSON response with the access token and user's ID if the
-      authentication is successful. If the authentication fails, it returns a JSON response with an error
-      message.
-    """
+    start_time = datetime.now(timezone.utc)
     try:
         payload = LoginRequest.parse_obj(request.get_json())
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
 
-    user_status = db.get_user_status_by_email(payload.email)[0]
+    success = False
+    error_text = None
+    error_type = None
+    user_id = None
 
-    if user_status in ["deactivate", "banned", "timeout"]:
-        return jsonify({"error": "Current Account Is Not Active or Banned!"}), 403
+    try:
+        status = db.get_user_status_by_email(payload.email)[0]
+        user_id = get_user_id_by_email(payload.email)
 
-    user_hashed_password = db.get_user_password_by_email(payload.email)[0]
-    user_role = db.get_user_role_by_email(payload.email)[0]
-    if user_role != "admin":
-        return jsonify({"error": "Current Account Is Not an Admin!"}), 401
-    # print("RESULT\n\n",result,"\n\n")
+        if status in ("deactivate", "banned", "timeout"):
+            error_type = "inactive_or_banned"
+            return jsonify({"error": "Account is inactive or banned"}), 403
 
-    if user_hashed_password:
-        user_email, stored_hashed_password = payload.email, user_hashed_password
-        if bcrypt.checkpw(
-            payload.password.encode("utf-8"), stored_hashed_password.encode("utf-8")
-        ):
-            additional_claims = {"scopes": role_scopes[user_role]}
-            access_token = create_access_token(
-                identity=payload.email,
-                expires_delta=timedelta(days=7),
-                additional_claims=additional_claims,
+        role = db.get_user_role_by_email(payload.email)[0]
+        if role != "admin":
+            error_type = "insufficient_role"
+            return jsonify({"error": "Insufficient permissions"}), 401
+
+        hashed = db.get_user_password_by_email(payload.email)[0]
+        if not bcrypt.checkpw(payload.password.encode(), hashed.encode()):
+            error_type = "wrong_password"
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        claims = {"scopes": role_scopes[role]}
+        access = create_access_token(identity=payload.email, expires_delta=timedelta(days=7), additional_claims=claims)
+        refresh = create_refresh_token(identity=payload.email, expires_delta=timedelta(days=30))
+
+        success = True
+        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id}), 200
+
+    except Exception as e:
+        error_text = str(e)
+        error_type = "admin_authentication_exception"
+        return jsonify({"error": "Admin authentication failed"}), 500
+    finally:
+        try:
+            delta = datetime.now(timezone.utc) - start_time
+            duration_ms = int(delta.total_seconds() * 1000)
+        except Exception:
+            duration_ms = None
+        finally:
+            log_activity(
+                "Admin login",
+                "auth",
+                user_id=user_id,
+                details={"success": success, "error_type": error_type, "error": error_text},
+                duration=duration_ms
             )
-            refresh_token = create_refresh_token(
-                identity=payload.email, expires_delta=timedelta(days=30)
-            )
-            return (
-                jsonify(
-                    {
-                        "access_token": access_token,
-                        "refresh_token": refresh_token,
-                        "user_email": user_email,
-                    }
-                ),
-                200,
-            )
 
-    return jsonify({"error": "Invalid email or password"}), 401
 
 @auth_bp.route("/refresh", methods=["POST"])
 @jwt_required(refresh=True)
 def refresh():
-    identity = get_jwt_identity()
-    user_role = db.get_user_role_by_email(identity)[0]
-    additional_claims = {"scopes": role_scopes[user_role]}
-    access_token = create_access_token(
-        identity=identity,
-        expires_delta=timedelta(days=7),
-        additional_claims=additional_claims,
-    )
-    return jsonify({"access_token": access_token}), 200
+    start_time = datetime.now(timezone.utc)
+    success = False
+    error_text = None
+    error_type = None
+    user_id = None
+
+    try:
+        identity = get_jwt_identity()
+        user_id = get_user_id_by_email(identity)
+        role = db.get_user_role_by_email(identity)[0]
+        claims = {"scopes": role_scopes[role]}
+
+        new_access = create_access_token(identity=identity, expires_delta=timedelta(days=7), additional_claims=claims)
+        success = True
+        return jsonify({"access_token": new_access}), 200
+
+    except Exception as e:
+        error_text = str(e)
+        error_type = "refresh_exception"
+        return jsonify({"error": "Token refresh failed"}), 500
+    finally:
+        try:
+            delta = datetime.now(timezone.utc) - start_time
+            duration_ms = int(delta.total_seconds() * 1000)
+        except Exception:
+            duration_ms = None
+        finally:
+            log_activity(
+                "Token refresh",
+                "auth",
+                user_id=user_id,
+                details={"success": success, "error_type": error_type, "error": error_text},
+                duration=duration_ms
+            )
 
 
 @auth_bp.route("/test", methods=["POST"])
 def test():
-    """
-    Authenticates a user by verifying the email and password.
-
-    This function receives a POST request containing a JSON payload with the user's email and password.
-    It validates the payload using the LoginRequest model. If the payload is valid, it retrieves the user's
-    hashed password from the database using the provided email. If the password matches the stored hashed
-    password, it generates an access token using the Flask-JWT-Extended library and returns it along with
-    the user's ID in a JSON response. If the email or password is invalid, it returns an error message in
-    a JSON response.
-
-    Parameters:
-    - request: A Flask request object containing the JSON payload with the user's email and password.
-
-    Returns:
-    - A Flask response object containing a JSON response with the access token and user's ID if the
-      authentication is successful. If the authentication fails, it returns a JSON response with an error
-      message.
-    """
     try:
         payload = LoginRequest.parse_obj(request.get_json())
     except ValidationError as ve:
         return jsonify({"error": ve.errors()}), 400
 
-    user_role = db.get_user_role_by_email(payload.email)[0]
-    additional_claims = {"scopes": role_scopes[user_role]}
-    access_token = create_access_token(
-        identity=payload.email,
-        expires_delta=timedelta(days=7),
-        additional_claims=additional_claims,
-    )
-    refresh_token = create_refresh_token(
-        identity=payload.email, expires_delta=timedelta(days=30)
-    )
-    return (
-        jsonify(
-            {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "user_email": payload.email,
-            }
-        ),
-        200,
-    )
+    success = False
+    error_text = None
+    error_type = None
+    user_id = None
+
+    try:
+        role = db.get_user_role_by_email(payload.email)[0]
+        claims = {"scopes": role_scopes[role]}
+        access = create_access_token(identity=payload.email, expires_delta=timedelta(days=7), additional_claims=claims)
+        refresh = create_refresh_token(identity=payload.email, expires_delta=timedelta(days=30))
+        user_id = get_user_id_by_email(payload.email)
+
+        success = True
+        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id}), 200
+
+    except Exception as e:
+        error_text = str(e)
+        error_type = "test_exception"
+        return jsonify({"error": "Test token issuance failed"}), 500
+    finally:
+        log_activity(
+            "Test tokens",
+            "auth",
+            user_id=user_id,
+            details={"success": success, "error_type": error_type, "error": error_text},
+        )

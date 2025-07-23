@@ -21,7 +21,7 @@ def assign_member(team_id):
                 "INSERT INTO team_members (team_id, user_id, joined_at) VALUES (%s, %s, NOW()) ON CONFLICT DO NOTHING",
                 (team_id, user_id)
             )
-    log_activity("User assigned to team", "team_members", user_id=get_jwt_identity(), details={"team_id": team_id, "user_id": user_id})
+    log_activity("User assigned to team", "team_members", user_id=get_user_id_by_email(get_jwt_identity()), details={"team_id": team_id, "user_id": user_id})
     return jsonify({"message": "User assigned to team", "team_id": team_id, "user_id": user_id})
 
 @team_members_bp.route("/<int:team_id>/members/<int:user_id>", methods=["DELETE"])

@@ -4,8 +4,9 @@ from pydantic import BaseModel, Field, ValidationError
 from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 from database.postgres import get_connection
-from database.user_queries import get_user_id_by_email
+from database.user_queries import get_user_id_by_email, get_user_role_by_email
 from util.activity_logger import log_activity
+from Blueprints.notifications import send_notification
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -122,8 +123,8 @@ def update_job(job_id):
                     )
                 )
             conn.commit()
-
-    log_activity("Job updated", "job", user_id=get_jwt_identity(), details=job)
+    send_notification(get_user_id_by_email(get_jwt_identity()), job_id, f"Your Intanded job is Updated by {get_user_role_by_email(get_jwt_identity())[0].upper()}!")
+    log_activity("Job updated", "job", user_id=get_user_id_by_email(get_jwt_identity()), details=job)
     return jsonify(job)
 
 # --- List/Filter/Search Jobs ---
@@ -231,5 +232,5 @@ def close_job(job_id):
             )
             conn.commit()
 
-    log_activity("Job closed", "job", user_id=get_jwt_identity(), details=job)
+    log_activity("Job closed", "job", user_id=get_user_id_by_email(get_jwt_identity()), details=job)
     return jsonify(job)

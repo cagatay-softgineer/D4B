@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from database.postgres import get_connection
+from database.user_queries import get_user_id_by_email
 from util.activity_logger import log_activity
 from pydantic import BaseModel, ValidationError, Field
 from psycopg2.extras import RealDictCursor
@@ -49,7 +50,7 @@ def create_location():
             location = cur.fetchone()
             conn.commit()
 
-    log_activity("Location created", "location", user_id=get_jwt_identity(), details=location)
+    log_activity("Location created", "location", user_id=get_user_id_by_email(get_jwt_identity()), details=location)
     return jsonify(location), 201
 
 # --- Endpoint: Update Location ---
@@ -79,7 +80,7 @@ def update_location(location_id):
                 return jsonify({"error": "Location not found"}), 404
             conn.commit()
 
-    log_activity("Location updated", "location", user_id=get_jwt_identity(), details=location)
+    log_activity("Location updated", "location", user_id=get_user_id_by_email(get_jwt_identity()), details=location)
     return jsonify(location)
 
 # --- Endpoint: Get Locations (Paginated/Filtered) ---

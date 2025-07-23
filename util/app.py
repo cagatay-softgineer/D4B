@@ -1,5 +1,5 @@
 from config.settings import settings
-from flask import Flask, jsonify, request, g
+from flask import Flask, json, jsonify, request, g
 from flask_talisman import Talisman
 from flask_jwt_extended import JWTManager
 from flask_limiter import Limiter
@@ -39,44 +39,84 @@ def create_app(app: Flask, _start_time:any, testing=False):
 
     # Middleware to log all requests
 
-    def log_request():
+    def start_timer():
         """
-        Logs each incoming HTTP request to both the application logger and the activity_logs table.
-        Attempts to log user_id if authenticated, otherwise logs as 'anonymous'.
+        Record the start time of each request for duration measurement.
         """
-        # Log to application log
-        logger.info(f"Request received: {request.method} {request.url}")
+        g.start_time = datetime.now(timezone.utc)
 
-        # Try to get user info from Flask context if available (JWT, session, etc.)
-        user_id = getattr(g, "user_id", None)  # Example: set g.user_id after auth middleware
 
-        # Optionally, determine action/type from the request
-        action = f"HTTP {request.method}"
+    def log_request(response):
+        """
+        After-request handler that logs HTTP request and response details,
+        including duration, user context, and request metadata, to both
+        the application logger and the activity_logs table.
+
+        Strips sensitive fields (e.g., passwords) from JSON bodies.
+
+        Should be registered with Flask's after_request decorator.
+        """
+        # Compute duration
+        try:
+            delta = datetime.now(timezone.utc) - g.start_time
+            duration_ms = int(delta.total_seconds() * 1000)
+        except Exception:
+            duration_ms = None
+
+        # User context
+        user_id = getattr(g, "user_id", None)
+
+        # Action and type
+        action = f"{request.method} {request.path}"
         type_ = "api"
 
         # Compose details
         details = {
             "url": request.url,
+            "method": request.method,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
             "remote_addr": request.remote_addr,
-            "args": request.args.to_dict(),
+            "user_agent": request.headers.get("User-Agent"),
+            "query_params": request.args.to_dict(),
         }
 
-        # Save to database
-        ts = datetime.now(timezone.utc)
-        import json
-        details_str = json.dumps(details, ensure_ascii=False)
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO activity_logs (action, type, user_id, details, timestamp)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (action, type_, user_id, details_str, ts)
-                )
-                conn.commit()
+        # Include JSON body if present, stripping sensitive keys
+        if request.is_json:
+            body = request.get_json(silent=True)
+            if isinstance(body, dict):
+                body.pop("password", None)
+            details["json_body"] = body
 
-    app.before_request(log_request)
+        # Application logger (structured)
+        logger.info(
+            f"Request {action} completed with status {response.status_code}",
+            extra={"details": details}
+        )
+
+        # Persist to DB
+        try:
+            ts = datetime.now(timezone.utc)
+            payload = json.dumps(details, ensure_ascii=False)
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO activity_logs
+                            (action, type, user_id, details, timestamp)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (action, type_, user_id, payload, ts),
+                    )
+                    conn.commit()
+        except Exception as db_err:
+            logger.error("Failed to write request log to DB", exc_info=db_err)
+
+        return response
+
+
+    app.before_request(start_timer)
+    app.after_request(log_request)
 
     app = register_blueprints(app)
     app = register_error_handlers(app)
