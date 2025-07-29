@@ -12,6 +12,7 @@ from Blueprints.locations import locations_bp
 from Blueprints.notifications import notifications_bp
 from Blueprints.teams import teams_bp
 from Blueprints.team_members import team_members_bp
+from Blueprints.reports import reports_bp
 
 
 def register_blueprints(app: Flask, testing=False):
@@ -26,6 +27,7 @@ def register_blueprints(app: Flask, testing=False):
     app.register_blueprint(user_bp, url_prefix="/admin")
     app.register_blueprint(profile_bp, url_prefix="/profile")
     app.register_blueprint(jobs_bp, url_prefix="/jobs")
+    app.register_blueprint(reports_bp, url_prefix="/reports")
     app.register_blueprint(attachments_bp, url_prefix="/file")
     app.register_blueprint(locations_bp, url_prefix="/geo")
     app.register_blueprint(notifications_bp, url_prefix="/notify")

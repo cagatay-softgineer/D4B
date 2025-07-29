@@ -16,7 +16,7 @@ from util.models import RegisterRequest, LoginRequest
 from pydantic import ValidationError
 from util.authlib import role_scopes
 from config.settings import settings
-from database.user_queries import get_user_id_by_email
+from database.user_queries import get_user_id_by_email, get_user_name_by_email
 
 auth_bp = Blueprint("auth", __name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -93,10 +93,11 @@ def login():
         refresh = create_refresh_token(identity=payload.email, expires_delta=timedelta(days=30))
 
         success = True
-        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id}), 200
+        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id, "role": role}), 200
 
     except Exception as e:
         error_text = str(e)
+        print(e)
         error_type = "authentication_exception"
         return jsonify({"error": "Authentication failed"}), 500
     finally:
@@ -144,7 +145,7 @@ def admin_login():
         refresh = create_refresh_token(identity=payload.email, expires_delta=timedelta(days=30))
 
         success = True
-        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id}), 200
+        return jsonify({"access_token": access, "refresh_token": refresh, "user_id": user_id, "role": role, "name": get_user_name_by_email(payload.email), "email": payload.email}), 200
 
     except Exception as e:
         error_text = str(e)

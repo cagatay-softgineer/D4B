@@ -48,8 +48,8 @@ all_scopes = [
 default_user = ["guest"]
 
 role_scopes = {
-    "admin": ["admin", "user"],
-    "maintenance": ["maint"],
-    "registered_user": ["user"],
+    "admin": ["admin", "maint", "user"],
+    "maintenance": ["maint", "user"],
+    "user": ["user"],
     "guest": ["guest"],
 }

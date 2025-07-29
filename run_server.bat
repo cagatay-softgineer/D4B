@@ -1,1 +1,1 @@
-cloudflared tunnel --config C:\Users\cagat\.cloudflared\config-mssql.yml run mssql
+cloudflared tunnel --config C:\Users\cagat\.cloudflared\config-flask.yml run flask

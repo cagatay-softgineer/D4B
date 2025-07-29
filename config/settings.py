@@ -107,5 +107,15 @@ class AppSettings(BaseSettings):
     csp_allow_all = {}
     CORS_resource_allow_all = {r"/*": {"origins": "*"}}
 
+class SMTPSettings(BaseSettings):
+    ID     : str = Field("", env="SMTP_ID")
+    SECRET : str = Field("", env="SMTP_SECRET")
+    HOST   : str = Field("", env="SMTP_HOST")
+    PORT   : str = Field("", env="SMTP_PORT")
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
 # Single entry point for generic settings
 settings = AppSettings()
